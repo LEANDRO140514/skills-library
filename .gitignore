@@ -1,0 +1,7 @@
+_archivo/
+*.credentials.json
+.credentials.json
+.env
+.env.local
+**/.insforge/
+project.json

@@ -1,0 +1,11 @@
+category: Media
+min_client_version: '2.2.0'
+interface:
+  display_name: 'Verdent Image Cli'
+  short_description: 'Generate and edit images via the verdent_image_cli tool.'
+  default_prompt: 'Generate an image of a scene I describe, or edit this image with my instructions.'
+  icon_dark: './assets/icon-dark.png'
+  icon_light: './assets/icon-light.png'
+  builtin: true
+  hidden: false
+  undeletable: true
