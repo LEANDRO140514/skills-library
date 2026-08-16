@@ -67,6 +67,54 @@ npx skills add anthropics/skills --all
 
 ## How to Help Users Find Skills
 
+### Step 0: Check What You Already Have First
+
+Before searching the open ecosystem, check what's already available locally — in this order.
+Only fall through to Step 1 (external search) if neither check below finds anything.
+
+**0a. Is it already active globally?**
+
+Check `C:\Users\vonde\.claude\skills\` for a folder matching the need (by name or obvious
+description match). If it's already there, **do not copy anything from the library** — tell the
+user it's already active globally and how to invoke it. This avoids duplicate copies of the same
+skill living in two places at once.
+
+**0b. Is it in the local library, just not active anywhere yet?**
+
+If it's not in global, check `C:\skills-library\_INDEX.csv` — the personal curated library
+(`mias` = authored by the user, `comunidad` = sourced elsewhere but reviewed). Search
+the `nombre` column (and `categoria` if it helps narrow things down) for a match.
+
+**Always read the skill's real path from the `ruta_biblioteca` column.** Never reconstruct the
+path by combining `categoria`/`mias_o_comunidad`/`nombre` yourself — the index has confirmed cases
+where a skill's physical folder doesn't match its category label (e.g. after being archived), so
+`ruta_biblioteca` is the only column guaranteed to point at the real folder.
+
+**If the match's `ruta_biblioteca` points inside `C:\skills-library\_archivo\`, treat it
+differently from a normal match** — it was deliberately set aside, not just uncategorized:
+
+1. Check the `razon_archivo` column — it says why: `duplicado` (already available another way,
+   e.g. a factory-installed pack), `descartado` (a superseded/inferior version), or `pospuesto`
+   (set aside pending a decision, not reviewed yet).
+2. Do **not** offer it as a normal result. Instead, surface it explicitly as archived and show the
+   reason, e.g.: *"Encontré `wayfinder` pero está archivada (duplicado: ya viene de fábrica en
+   Hermes, sin valor adicional). ¿Seguro que quieres activarla igual?"*
+3. Only copy it if the user explicitly confirms after seeing the reason — this is an extra
+   confirmation step on top of the normal one, not a replacement for it.
+
+**If the match is in an active category** (not `_archivo`), it's a normal offer:
+1. Show the user the row: `nombre`, `categoria`, `confianza` (alta/media/baja — call out anything
+   `baja` explicitly, it means the categorization or origin was uncertain when indexed).
+2. Ask where to activate it: this project's `.claude\skills\` (if working inside a repo) or global
+   `.claude\skills\` (only if it's clearly transversal — ask, don't assume which).
+3. Copy (never move) the folder at `ruta_biblioteca` to the chosen destination. The library itself
+   is a reference source and is never modified or consumed by this process.
+4. Verify the copy landed completely (`SKILL.md` plus any subfolders) before telling the user it's
+   ready to use.
+
+If there's no match in the library either, continue to Step 1 below — the external search flow is
+unchanged.
+
 ### Step 1: Understand What They Need
 
 When a user asks for help with something, identify:
