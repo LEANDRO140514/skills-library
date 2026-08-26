@@ -33,7 +33,7 @@ index_path = repo_root / "_INDEX.csv"
 # Load _INDEX.csv: strip BOM, normalize line endings for parsing.
 # This script NEVER writes the CSV.
 raw = index_path.read_bytes()
-if raw.startswith(b'\xef\xbb\xbf'):
+while raw.startswith(b'\xef\xbb\xbf'):
     raw = raw[3:]
 text = raw.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
 reader = csv.DictReader(io.StringIO(text))
