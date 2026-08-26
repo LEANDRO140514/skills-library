@@ -46,7 +46,11 @@ def normalize_ruta(ruta):
     Handles 'C:\\skills-library\\a\\b' -> 'a/b'
     and     '/home/.../skills-library/a/b' -> 'a/b'
     and     'a/b' -> 'a/b'  (already relative)
+    DictReader sets missing fields to None (e.g. tab-delimited rows); return ''
+    so callers get a predictable non-match instead of AttributeError.
     """
+    if not ruta:
+        return ''
     r = ruta.strip().replace('\\', '/')
     for marker in ('skills-library/', 'skills_library/'):
         if marker in r:
