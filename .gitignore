@@ -5,3 +5,4 @@ _archivo/
 .env.local
 **/.insforge/
 project.json
+reports/
