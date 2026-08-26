@@ -243,6 +243,49 @@ The governed Skill Resolution Protocol v5 is centered on:
 
 The protocol is deliberately modular: each Skill owns one responsibility instead of duplicating the implementation of the others.
 
+## Validate
+
+Every skill that touches `SKILL.md` or `scripts/` in a PR must pass the Skill Gate before merging.
+
+### Scanner
+
+**SkillSpector v2.9.6** (NVIDIA, static analysis, `--no-llm`).
+
+Pinned version: `git+https://github.com/NVIDIA/SkillSpector.git@v2.9.6`
+
+A version bump is its own dedicated PR — never a silent in-place update.
+
+Local run:
+
+    ./scripts/scan-skills.sh <skill-dir> [<skill-dir> ...]
+
+### Threshold
+
+| Condition | CI result | scan_verdict | Next step |
+|---|---|---|---|
+| 0 critical, score 0–20 | pass | `allow` | Short review + promote |
+| 0 critical, score 21–50 | pass | `review` | Sentry skill-scanner review + explicit OK or `scan_waiver` |
+| ≥1 critical **or** score ≥ 51 | **fail** | `deny` | Fix before merge; skill goes to `_archivo/` if not fixable |
+
+**Fail = critical finding or score ≥ 51 (DO NOT INSTALL per SkillSpector). Score 50 without critical does not fail the PR.**
+
+SARIF results go to the Security tab (Code Scanning). No public artifact.
+
+### Result → _INDEX.csv mapping
+
+`scan_verdict` values: `allow` | `review` | `deny` | *(empty — not yet scanned)*
+
+- `find-skills` **must not** resolve a `comunidad` skill with `deny`, no scan, or empty `scan_verdict`.
+- `mias` skills with `review` + `scan_waiver` are resolvable for meta-skills only (see below).
+- `mias` skills go through the same gate — no auto-trust for first-party skills.
+- `antigravity.zip` stays in `_archivo/` unscanned; it is not resolvable.
+
+### Initial ingestion exception (meta-skills)
+
+A meta-skill entering the library for the first time may carry `scan_verdict=review` + a `scan_waiver` explaining why a full baseline is pending. The first PR that subsequently touches the skill must include a complete scan result — `scan_score`, `scan_version`, `scan_report` — before the waiver can be cleared.
+
+`find-skills` (when implemented) treats `review + scan_waiver` as resolvable for `agentes-meta/mias/` entries only, not for product-category `comunidad` skills.
+
 ## Guiding Principle
 
 > The library is the registry of governed capability.
