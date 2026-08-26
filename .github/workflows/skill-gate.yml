@@ -1,0 +1,236 @@
+# Validate gate — runs SkillSpector (static, --no-llm) on every skill touched by a PR.
+# Pin: SkillSpector v2.9.6 (2026-08-18). A version bump is its own dedicated PR.
+# Thresholds: DENY if critical finding OR risk_assessment.score >= 51.
+#             Score 50 without critical is CAUTION — PR passes, requires Sentry review.
+# SARIF goes to the Security tab (Code Scanning). No public artifact with findings.
+
+name: Skill Gate
+
+on:
+  pull_request:
+    paths:
+      - '**/SKILL.md'
+      - '**/scripts/**'
+
+permissions:
+  contents: read
+  security-events: write  # required for SARIF upload to Code Scanning
+
+jobs:
+  # ── Job 1: find which skill directories the PR actually touches ──────────────
+  discover:
+    name: Discover changed skills
+    runs-on: ubuntu-latest
+    outputs:
+      skills: ${{ steps.find.outputs.skills }}
+      has-skills: ${{ steps.find.outputs.has-skills }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Find changed skill directories
+        id: find
+        run: |
+          set -euo pipefail
+
+          BASE_REF="${{ github.base_ref }}"
+          git fetch origin "${BASE_REF}" --depth=1
+          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+
+          declare -A SEEN
+          SKILL_LIST=()
+
+          find_skill_root() {
+            local dir
+            dir=$(dirname "$1")
+            while [ "$dir" != "." ] && [ -n "$dir" ]; do
+              if [ -f "${dir}/SKILL.md" ]; then
+                printf '%s' "$dir"
+                return 0
+              fi
+              dir=$(dirname "$dir")
+            done
+            return 1
+          }
+
+          while IFS= read -r file; do
+            # Never scan archived skills
+            [[ "$file" == _archivo/* ]] && continue
+
+            root=$(find_skill_root "$file") || continue
+
+            # Deduplicate
+            if [[ "${SEEN[$root]+_}" ]]; then continue; fi
+            SEEN[$root]=1
+            SKILL_LIST+=("$root")
+          done <<< "$CHANGED"
+
+          if [ ${#SKILL_LIST[@]} -eq 0 ]; then
+            echo "has-skills=false" >> "$GITHUB_OUTPUT"
+            echo "skills=[]"        >> "$GITHUB_OUTPUT"
+            echo "No skill directories changed — gate skipped."
+          else
+            JSON=$(printf '%s\n' "${SKILL_LIST[@]}" | jq -R . | jq -sc .)
+            echo "has-skills=true"    >> "$GITHUB_OUTPUT"
+            echo "skills=${JSON}"     >> "$GITHUB_OUTPUT"
+            echo "Skills to scan: ${SKILL_LIST[*]}"
+          fi
+
+  # ── Job 2: one scan per changed skill (matrix) ──────────────────────────────
+  scan:
+    name: "Scan: ${{ matrix.skill }}"
+    needs: discover
+    if: needs.discover.outputs.has-skills == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        skill: ${{ fromJson(needs.discover.outputs.skills) }}
+      fail-fast: false  # scan all skills even if one fails
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      # Pin version. Bump = dedicated PR to this workflow file.
+      - name: Install SkillSpector v2.9.6
+        run: uv tool install "git+https://github.com/NVIDIA/SkillSpector.git@v2.9.6"
+
+      - name: Prepare scan target (apply approved FP exceptions)
+        id: prep
+        env:
+          SKILL_DIR: ${{ matrix.skill }}
+        run: |
+          SCAN_TARGET="${SKILL_DIR}"
+
+          # agentes-meta/mias/skill-scanner: references/ and scripts/scan_skill.py contain
+          # upstream getsentry detection code and documentation. They describe and detect
+          # attack patterns — they do not perform them (documentar != atacar).
+          # Excluding both paths from scan scope is the approved exception.
+          # See README § Validate / False positive exceptions and _INDEX.csv scan_waiver.
+          if [[ "${SKILL_DIR}" == "agentes-meta/mias/skill-scanner" ]]; then
+            SCAN_TARGET="$(mktemp -d)/skill-scanner"
+            rsync -a --exclude='references/' --exclude='scripts/' "${SKILL_DIR}/" "${SCAN_TARGET}/"
+            echo "::notice file=agentes-meta/mias/skill-scanner/references::FP exception: references/ and scripts/ excluded from SkillSpector scope (upstream getsentry detection code/documentation)."
+          fi
+
+          echo "target=${SCAN_TARGET}" >> "$GITHUB_OUTPUT"
+
+      - name: Run SkillSpector (--no-llm)
+        id: scan
+        run: |
+          set -euo pipefail
+          SKILL_DIR="${{ matrix.skill }}"
+          SCAN_TARGET="${{ steps.prep.outputs.target }}"
+
+          # Sanitize dir path for use in filenames
+          SAFE="${SKILL_DIR//\//-}"
+
+          JSON_FILE="/tmp/result-${SAFE}.json"
+          SARIF_FILE="/tmp/result-${SAFE}.sarif"
+
+          # SkillSpector exits non-zero when findings are present — capture RC, don't abort.
+          set +e
+          skillspector scan --no-llm --format json  "$SCAN_TARGET" > "$JSON_FILE" 2>&1
+          SCAN_RC=$?
+          skillspector scan --no-llm --format sarif "$SCAN_TARGET" > "$SARIF_FILE" 2>/dev/null || true
+          set -e
+
+          # If no JSON was produced (tool crash, not findings), fail explicitly.
+          if [ ! -s "$JSON_FILE" ]; then
+            echo "::error::SkillSpector produced no JSON output (exit ${SCAN_RC}). Cannot parse results."
+            exit 1
+          fi
+
+          # Integer score — strip decimal if present (SkillSpector may emit 42.0)
+          SCORE=$(jq '.risk_assessment.score' "$JSON_FILE")
+          SCORE="${SCORE%.*}"
+
+          # Null-safe critical count (.issues may be null on clean scans)
+          CRITICAL_COUNT=$(jq '[.issues[]? | select(.severity == "CRITICAL")] | length' "$JSON_FILE")
+
+          RECOMMENDATION=$(jq -r '.risk_assessment.recommendation' "$JSON_FILE")
+
+          # Fail explicitly if score could not be parsed
+          if [ -z "$SCORE" ] || [ "$SCORE" = "null" ]; then
+            echo "::error::Could not parse risk_assessment.score from JSON output."
+            cat "$JSON_FILE"
+            exit 1
+          fi
+
+          echo "score=${SCORE}"               >> "$GITHUB_OUTPUT"
+          echo "critical=${CRITICAL_COUNT}"   >> "$GITHUB_OUTPUT"
+          echo "recommendation=${RECOMMENDATION}" >> "$GITHUB_OUTPUT"
+          echo "json=${JSON_FILE}"            >> "$GITHUB_OUTPUT"
+          echo "sarif=${SARIF_FILE}"          >> "$GITHUB_OUTPUT"
+
+      - name: Write PR job summary
+        if: always()
+        env:
+          SKILL_DIR: ${{ matrix.skill }}
+          SCORE:     ${{ steps.scan.outputs.score }}
+          CRITICAL:  ${{ steps.scan.outputs.critical }}
+          REC:       ${{ steps.scan.outputs.recommendation }}
+        run: |
+          SAFE="${SKILL_DIR//\//-}"
+          JSON_FILE="/tmp/result-${SAFE}.json"
+
+          {
+            echo "## Skill Gate — \`${SKILL_DIR}\`"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| Score | ${SCORE} / 100 |"
+            echo "| Critical findings | ${CRITICAL} |"
+            echo "| Recommendation | ${REC} |"
+            echo ""
+            echo "### Top findings (up to 3)"
+            echo "| Severity | Category | Location |"
+            echo "|---|---|---|"
+            if [ -f "$JSON_FILE" ]; then
+              jq -r '
+                .issues | sort_by(.severity) | reverse | .[:3][] |
+                "| `\(.severity)` | \(.category) | \(.location.file // "—"):\(.location.start_line // "—") |"
+              ' "$JSON_FILE" || echo "| — | No findings | — |"
+            else
+              echo "| — | Scan output not found | — |"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      # SARIF goes to the Security tab, not as a public artifact.
+      # continue-on-error: Code Scanning may not be enabled; the gate decision is
+      # based on the parsed JSON score above, not on this upload succeeding.
+      - name: Upload SARIF to Security tab
+        if: steps.scan.outcome == 'success'
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: ${{ steps.scan.outputs.sarif }}
+          category: "skillspector/${{ matrix.skill }}"
+        continue-on-error: true
+
+      # Gate decision — must be the last step so summary is already written.
+      - name: Enforce gate threshold
+        env:
+          SKILL_DIR: ${{ matrix.skill }}
+          SCORE:     ${{ steps.scan.outputs.score }}
+          CRITICAL:  ${{ steps.scan.outputs.critical }}
+        run: |
+          # If scan step failed to produce outputs, treat as gate failure.
+          if [ -z "${SCORE}" ] || [ -z "${CRITICAL}" ]; then
+            echo "::error file=${SKILL_DIR}/SKILL.md::DENY — scan step produced no results. Check the 'Run SkillSpector' step for details."
+            exit 1
+          fi
+
+          if [ "${CRITICAL}" -gt 0 ] || [ "${SCORE}" -ge 51 ]; then
+            echo "::error file=${SKILL_DIR}/SKILL.md::DENY — score=${SCORE}/100, critical_findings=${CRITICAL}. Fix all critical issues and reduce score below 51 before merging."
+            exit 1
+          fi
+
+          if [ "${SCORE}" -ge 21 ]; then
+            echo "::warning file=${SKILL_DIR}/SKILL.md::CAUTION (score=${SCORE}, 21-50). Requires Sentry skill-scanner review and explicit OK or scan_waiver in _INDEX.csv before promote."
+          else
+            echo "ALLOW — ${SKILL_DIR}: score=${SCORE}/100 (safe band 0-20)."
+          fi
