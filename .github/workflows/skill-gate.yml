@@ -99,11 +99,31 @@ jobs:
       - name: Install SkillSpector v2.9.6
         run: uv tool install "git+https://github.com/NVIDIA/SkillSpector.git@v2.9.6"
 
+      - name: Prepare scan target (apply approved FP exceptions)
+        id: prep
+        env:
+          SKILL_DIR: ${{ matrix.skill }}
+        run: |
+          SCAN_TARGET="${SKILL_DIR}"
+
+          # agentes-meta/mias/skill-scanner: references/ contains upstream getsentry
+          # documentation files that describe attack patterns for detection purposes
+          # (documentar != atacar). Excluding from scan scope is the approved exception.
+          # See README § Validate / False positive exceptions and _INDEX.csv scan_waiver.
+          if [[ "${SKILL_DIR}" == "agentes-meta/mias/skill-scanner" ]]; then
+            SCAN_TARGET="$(mktemp -d)/skill-scanner"
+            rsync -a --exclude='references/' "${SKILL_DIR}/" "${SCAN_TARGET}/"
+            echo "::notice file=agentes-meta/mias/skill-scanner/references::FP exception: references/ excluded from SkillSpector scope (upstream getsentry detection documentation)."
+          fi
+
+          echo "target=${SCAN_TARGET}" >> "$GITHUB_OUTPUT"
+
       - name: Run SkillSpector (--no-llm)
         id: scan
         run: |
           set -euo pipefail
           SKILL_DIR="${{ matrix.skill }}"
+          SCAN_TARGET="${{ steps.prep.outputs.target }}"
 
           # Sanitize dir path for use in filenames
           SAFE="${SKILL_DIR//\//-}"
@@ -113,9 +133,9 @@ jobs:
 
           # SkillSpector exits non-zero when findings are present — capture RC, don't abort.
           set +e
-          skillspector scan --no-llm --format json  "$SKILL_DIR" > "$JSON_FILE" 2>&1
+          skillspector scan --no-llm --format json  "$SCAN_TARGET" > "$JSON_FILE" 2>&1
           SCAN_RC=$?
-          skillspector scan --no-llm --format sarif "$SKILL_DIR" > "$SARIF_FILE" 2>/dev/null || true
+          skillspector scan --no-llm --format sarif "$SCAN_TARGET" > "$SARIF_FILE" 2>/dev/null || true
           set -e
 
           # If no JSON was produced (tool crash, not findings), fail explicitly.

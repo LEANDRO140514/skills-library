@@ -286,6 +286,16 @@ A meta-skill entering the library for the first time may carry `scan_verdict=rev
 
 `find-skills` (when implemented) treats `review + scan_waiver` as resolvable for `agentes-meta/mias/` entries only, not for product-category `comunidad` skills.
 
+### False positive exceptions
+
+Approved exceptions are implemented as scan-scope exclusions in the gate — not as threshold reductions. The global threshold (score ≥ 51 or any CRITICAL) applies everywhere else.
+
+| Skill | Excluded path | Rule(s) | Reason | Approved |
+|---|---|---|---|---|
+| `agentes-meta/mias/skill-scanner` | `references/**` | YR4, YR1 | Upstream getsentry reference files document attack patterns for detection purposes — they describe threats, they do not perform them (`documentar != atacar`). The scanner's own reference material is not an attack surface. | PR #2, 2026-08-26 |
+
+To add an exception: open a PR that modifies `.github/workflows/skill-gate.yml` (the `prep` step), adds a row here, and updates `scan_waiver` in `_INDEX.csv` for the affected skill. The exception must name the specific path glob, the rule IDs confirmed as false positive, and the reason.
+
 ## Guiding Principle
 
 > The library is the registry of governed capability.

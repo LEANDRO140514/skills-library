@@ -7,9 +7,6 @@ description: Scan agent skills for security issues. Use when asked to "scan a sk
 allowed-tools: Read, Grep, Glob, Bash
 ---
 
-<!-- upstream: getsentry/skills@c2f99a5b04b4cd992ec3022d7c2c3e23e938d241 skills/skill-scanner -->
-<!-- role: meta — Sentry's intent-review layer for the Validate gate. Not deployed to jewel/hermes runtimes. -->
-
 # Skill Security Scanner
 
 Scan agent skills for security issues before adoption. Detects prompt injection, malicious code, excessive permissions, secret exposure, and supply chain risks.
