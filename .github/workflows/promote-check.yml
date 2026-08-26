@@ -42,7 +42,7 @@ jobs:
 
           CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
 
-          # ── From SKILL.md / scripts changes (same logic as skill-gate) ──────
+          # ── From SKILL.md / scripts changes (mirrors skill-gate discover) ────
           declare -A SEEN
           SKILL_LIST=()
 
@@ -68,7 +68,7 @@ jobs:
             fi
           done <<< "$CHANGED"
 
-          # ── From _INDEX.csv changes: extract ruta_biblioteca of touched rows ─
+          # ── From _INDEX.csv changes: rows added/modified in the diff ─────────
           if echo "$CHANGED" | grep -qx "_INDEX.csv"; then
             while IFS= read -r dir; do
               [[ -z "$dir" ]] && continue
@@ -77,42 +77,7 @@ jobs:
                 SEEN[$dir]=1
                 SKILL_LIST+=("$dir")
               fi
-            done < <(
-              python3 - "${BASE_REF}" << 'PY'
-import sys, subprocess, csv, io
-
-base_ref = sys.argv[1]
-diff_out = subprocess.check_output(
-    ["git", "diff", "--unified=0", f"origin/{base_ref}...HEAD", "--", "_INDEX.csv"],
-    text=True, errors="replace",
-)
-
-def normalize(ruta):
-    r = ruta.strip().replace('\\', '/')
-    for marker in ('skills-library/', 'skills_library/'):
-        if marker in r:
-            return r[r.index(marker) + len(marker):].rstrip('/')
-    if r and ':' not in r and not r.startswith('/'):
-        return r.rstrip('/')
-    return None
-
-seen = set()
-for line in diff_out.splitlines():
-    if not line.startswith('+') or line.startswith('+++'):
-        continue
-    line = line[1:].lstrip('﻿')
-    try:
-        row = next(csv.reader(io.StringIO(line)))
-        # ruta_biblioteca is column index 8 (0-based)
-        if len(row) > 8:
-            rel = normalize(row[8])
-            if rel and rel not in seen:
-                seen.add(rel)
-                print(rel)
-    except Exception:
-        pass
-PY
-            )
+            done < <(bash scripts/discover-index-skills.sh "${BASE_REF}")
           fi
 
           if [ ${#SKILL_LIST[@]} -eq 0 ]; then
@@ -121,7 +86,6 @@ PY
             echo "No skill directories to check — promote-check skipped."
           else
             echo "has-skills=true" >> "$GITHUB_OUTPUT"
-            # Space-separated list for passing to index-check.sh
             printf -v ARGS '%s ' "${SKILL_LIST[@]}"
             echo "skills_args=${ARGS}" >> "$GITHUB_OUTPUT"
             echo "Skills to check: ${SKILL_LIST[*]}"
