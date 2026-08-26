@@ -106,14 +106,15 @@ jobs:
         run: |
           SCAN_TARGET="${SKILL_DIR}"
 
-          # agentes-meta/mias/skill-scanner: references/ contains upstream getsentry
-          # documentation files that describe attack patterns for detection purposes
-          # (documentar != atacar). Excluding from scan scope is the approved exception.
+          # agentes-meta/mias/skill-scanner: references/ and scripts/scan_skill.py contain
+          # upstream getsentry detection code and documentation. They describe and detect
+          # attack patterns — they do not perform them (documentar != atacar).
+          # Excluding both paths from scan scope is the approved exception.
           # See README § Validate / False positive exceptions and _INDEX.csv scan_waiver.
           if [[ "${SKILL_DIR}" == "agentes-meta/mias/skill-scanner" ]]; then
             SCAN_TARGET="$(mktemp -d)/skill-scanner"
-            rsync -a --exclude='references/' "${SKILL_DIR}/" "${SCAN_TARGET}/"
-            echo "::notice file=agentes-meta/mias/skill-scanner/references::FP exception: references/ excluded from SkillSpector scope (upstream getsentry detection documentation)."
+            rsync -a --exclude='references/' --exclude='scripts/' "${SKILL_DIR}/" "${SCAN_TARGET}/"
+            echo "::notice file=agentes-meta/mias/skill-scanner/references::FP exception: references/ and scripts/ excluded from SkillSpector scope (upstream getsentry detection code/documentation)."
           fi
 
           echo "target=${SCAN_TARGET}" >> "$GITHUB_OUTPUT"

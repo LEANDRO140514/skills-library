@@ -292,7 +292,7 @@ Approved exceptions are implemented as scan-scope exclusions in the gate — not
 
 | Skill | Excluded path | Rule(s) | Reason | Approved |
 |---|---|---|---|---|
-| `agentes-meta/mias/skill-scanner` | `references/**` | YR4, YR1 | Upstream getsentry reference files document attack patterns for detection purposes — they describe threats, they do not perform them (`documentar != atacar`). The scanner's own reference material is not an attack surface. | PR #2, 2026-08-26 |
+| `agentes-meta/mias/skill-scanner` | `references/**`, `scripts/**` | YR4, YR1, AR3, LP1, MP3, P1, P2, P6, PE3 | Upstream getsentry reference files and detection script. Both describe and detect attack patterns — they do not perform them (`documentar != atacar`). The scanner's own detection code and reference material are not attack surfaces. Scanned scope: `SKILL.md` only. | PR #2, 2026-08-26 |
 
 To add an exception: open a PR that modifies `.github/workflows/skill-gate.yml` (the `prep` step), adds a row here, and updates `scan_waiver` in `_INDEX.csv` for the affected skill. The exception must name the specific path glob, the rule IDs confirmed as false positive, and the reason.
 
