@@ -36,8 +36,8 @@ jobs:
           set -euo pipefail
 
           BASE_REF="${{ github.base_ref }}"
-          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD" 2>/dev/null \
-                 || git diff --name-only "origin/${BASE_REF}..HEAD")
+          git fetch origin "${BASE_REF}" --depth=1
+          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
 
           declare -A SEEN
           SKILL_LIST=()
@@ -111,12 +111,34 @@ jobs:
           JSON_FILE="/tmp/result-${SAFE}.json"
           SARIF_FILE="/tmp/result-${SAFE}.sarif"
 
-          skillspector scan --no-llm --format json  "$SKILL_DIR" > "$JSON_FILE"
-          skillspector scan --no-llm --format sarif "$SKILL_DIR" > "$SARIF_FILE"
+          # SkillSpector exits non-zero when findings are present — capture RC, don't abort.
+          set +e
+          skillspector scan --no-llm --format json  "$SKILL_DIR" > "$JSON_FILE" 2>&1
+          SCAN_RC=$?
+          skillspector scan --no-llm --format sarif "$SKILL_DIR" > "$SARIF_FILE" 2>/dev/null || true
+          set -e
 
+          # If no JSON was produced (tool crash, not findings), fail explicitly.
+          if [ ! -s "$JSON_FILE" ]; then
+            echo "::error::SkillSpector produced no JSON output (exit ${SCAN_RC}). Cannot parse results."
+            exit 1
+          fi
+
+          # Integer score — strip decimal if present (SkillSpector may emit 42.0)
           SCORE=$(jq '.risk_assessment.score' "$JSON_FILE")
-          CRITICAL_COUNT=$(jq '[.issues[] | select(.severity == "CRITICAL")] | length' "$JSON_FILE")
+          SCORE="${SCORE%.*}"
+
+          # Null-safe critical count (.issues may be null on clean scans)
+          CRITICAL_COUNT=$(jq '[.issues[]? | select(.severity == "CRITICAL")] | length' "$JSON_FILE")
+
           RECOMMENDATION=$(jq -r '.risk_assessment.recommendation' "$JSON_FILE")
+
+          # Fail explicitly if score could not be parsed
+          if [ -z "$SCORE" ] || [ "$SCORE" = "null" ]; then
+            echo "::error::Could not parse risk_assessment.score from JSON output."
+            cat "$JSON_FILE"
+            exit 1
+          fi
 
           echo "score=${SCORE}"               >> "$GITHUB_OUTPUT"
           echo "critical=${CRITICAL_COUNT}"   >> "$GITHUB_OUTPUT"
@@ -175,6 +197,12 @@ jobs:
           SCORE:     ${{ steps.scan.outputs.score }}
           CRITICAL:  ${{ steps.scan.outputs.critical }}
         run: |
+          # If scan step failed to produce outputs, treat as gate failure.
+          if [ -z "${SCORE}" ] || [ -z "${CRITICAL}" ]; then
+            echo "::error file=${SKILL_DIR}/SKILL.md::DENY — scan step produced no results. Check the 'Run SkillSpector' step for details."
+            exit 1
+          fi
+
           if [ "${CRITICAL}" -gt 0 ] || [ "${SCORE}" -ge 51 ]; then
             echo "::error file=${SKILL_DIR}/SKILL.md::DENY — score=${SCORE}/100, critical_findings=${CRITICAL}. Fix all critical issues and reduce score below 51 before merging."
             exit 1

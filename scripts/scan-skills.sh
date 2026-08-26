@@ -43,11 +43,22 @@ for SKILL in "$@"; do
   echo ""
   echo "=== Scanning: ${SKILL}"
 
-  skillspector scan --no-llm --format json  "${SKILL}" > "${JSON_OUT}"
-  skillspector scan --no-llm --format sarif "${SKILL}" > "${SARIF_OUT}"
+  # SkillSpector exits non-zero when findings are present — capture RC separately.
+  set +e
+  skillspector scan --no-llm --format json  "${SKILL}" > "${JSON_OUT}" 2>&1
+  set -e
+
+  skillspector scan --no-llm --format sarif "${SKILL}" > "${SARIF_OUT}" 2>/dev/null || true
+
+  if [ ! -s "${JSON_OUT}" ]; then
+    echo >&2 "    ERROR: no JSON output produced — SkillSpector may have crashed"
+    OVERALL_EXIT=1
+    continue
+  fi
 
   SCORE=$(jq '.risk_assessment.score' "${JSON_OUT}")
-  CRITICAL=$(jq '[.issues[] | select(.severity == "CRITICAL")] | length' "${JSON_OUT}")
+  SCORE="${SCORE%.*}"  # strip decimal if present (e.g. 42.0 -> 42)
+  CRITICAL=$(jq '[.issues[]? | select(.severity == "CRITICAL")] | length' "${JSON_OUT}")
   REC=$(jq -r '.risk_assessment.recommendation' "${JSON_OUT}")
 
   echo "    score:       ${SCORE}/100"
