@@ -296,6 +296,80 @@ Approved exceptions are implemented as scan-scope exclusions in the gate — not
 
 To add an exception: open a PR that modifies `.github/workflows/skill-gate.yml` (the `prep` step), adds a row here, and updates `scan_waiver` in `_INDEX.csv` for the affected skill. The exception must name the specific path glob, the rule IDs confirmed as false positive, and the reason.
 
+## Promote
+
+A PR enters `main` only when its `_INDEX.csv` row is complete and correct. The Promote Check enforces this automatically.
+
+**Promote != deploy.** A successful promotion does not install the skill in any runtime.
+
+### Pipeline position
+
+| Gate | Job | What it checks | Who fills data |
+|---|---|---|---|
+| Validate | `skill-gate.yml` | Security (SkillSpector) | CI writes nothing; human reads score |
+| **Promote** | `promote-check.yml` | Index integrity (hash, verdict, fields) | PR author fills `_INDEX.csv` row; CI verifies |
+| Deploy | *(separate authorization)* | Runtime installation | Explicit deployment approval |
+
+Both Validate and Promote must pass before a PR that touches `SKILL.md` or `scripts/` can merge. If only `_INDEX.csv` changes, only Promote Check runs.
+
+### Trigger paths
+
+| Path pattern | Validate | Promote |
+|---|---|---|
+| `**/SKILL.md` | yes | yes |
+| `**/scripts/**` (within a skill) | yes | yes |
+| `_INDEX.csv` | no | yes |
+| `README.md`, workflow files | no | no |
+
+### What the Promote Check verifies
+
+For each skill directory touched in the PR (including skills mentioned in `_INDEX.csv` rows that changed):
+
+| Check | Field | Rule |
+|---|---|---|
+| a | `SKILL.md` | File exists at the path |
+| b | `ruta_biblioteca` | Exactly 1 matching row in `_INDEX.csv` |
+| c | `hash_sha256` | Equals SHA-256 of `git cat-file blob HEAD:skill/SKILL.md` |
+| d | `scan_verdict` | Must be `allow` or `review` for active skills; `deny` → skill must be in `_archivo/` |
+| e | `scan_waiver` | Required when `scan_verdict=review` |
+| f | `scan_verdict` (comunidad) | Cannot be empty for `mias_o_comunidad=comunidad` |
+| g | `scan_tool`, `scan_version` | Required when `scan_verdict` is set |
+| h | `nombre` | Must match the folder basename of `ruta_biblioteca` |
+
+CI only runs checks against skills **touched in the PR** — existing rows with empty `scan_verdict` are not re-validated on every PR.
+
+### Canonical hash
+
+`hash_sha256` is the SHA-256 of the Git blob content (LF line endings), not the working-tree file (which may be CRLF on Windows).
+
+```bash
+git cat-file blob HEAD:categoria/mias/nombre/SKILL.md \
+  | python3 -c "import sys,hashlib; print(hashlib.sha256(sys.stdin.buffer.read()).hexdigest().upper())"
+```
+
+Or use the local script:
+
+```bash
+./scripts/index-check.sh categoria/mias/nombre
+```
+
+### `ruta_biblioteca` format
+
+Always relative from repo root. No `C:\`, no leading slash.
+
+    agentes-meta/mias/skill-promote     ← correct
+    C:\skills-library\agentes-meta\...  ← legacy (tolerated in existing rows, forbidden in new ones)
+
+### Local index check
+
+```bash
+# Check one skill
+./scripts/index-check.sh agentes-meta/mias/skill-promote
+
+# Check all active rows (local use only — CI always passes dirs explicitly)
+./scripts/index-check.sh
+```
+
 ## Guiding Principle
 
 > The library is the registry of governed capability.
