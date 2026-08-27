@@ -1,0 +1,100 @@
+# Promote Check — verifies _INDEX.csv integrity before a PR can enter main.
+# Orthogonal to Skill Gate (security). This job checks the registry, not the bundle.
+#
+# Runs when a PR to main touches:
+#   - any SKILL.md or scripts/ inside a skill directory
+#   - _INDEX.csv directly
+#
+# Does NOT write _INDEX.csv. CI only verifies. The PR author fills the row.
+# Green CI + human merge = promote. Promote != deploy.
+
+name: Promote Check
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/SKILL.md'
+      - '**/scripts/**'
+      - '_INDEX.csv'
+
+permissions:
+  contents: read
+
+jobs:
+  index-check:
+    name: Index integrity check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Discover changed skills and INDEX rows
+        id: find
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: |
+          set -euo pipefail
+
+          git fetch origin "${BASE_REF}" --depth=1
+
+          CHANGED=$(git diff --name-only "origin/${BASE_REF}...HEAD")
+
+          # ── From SKILL.md / scripts changes (mirrors skill-gate discover) ────
+          declare -A SEEN
+          SKILL_LIST=()
+
+          find_skill_root() {
+            local dir
+            dir=$(dirname "$1")
+            while [ "$dir" != "." ] && [ -n "$dir" ]; do
+              if [ -f "${dir}/SKILL.md" ]; then
+                printf '%s' "$dir"
+                return 0
+              fi
+              dir=$(dirname "$dir")
+            done
+            return 1
+          }
+
+          while IFS= read -r file; do
+            [[ "$file" == _archivo/* ]] && continue
+            root=$(find_skill_root "$file") || continue
+            if [[ ! "${SEEN[$root]+_}" ]]; then
+              SEEN[$root]=1
+              SKILL_LIST+=("$root")
+            fi
+          done <<< "$CHANGED"
+
+          # ── From _INDEX.csv changes: rows added/modified in the diff ─────────
+          if echo "$CHANGED" | grep -qx "_INDEX.csv"; then
+            while IFS= read -r dir; do
+              [[ -z "$dir" ]] && continue
+              [[ "$dir" == _archivo/* ]] && continue
+              if [[ ! "${SEEN[$dir]+_}" ]]; then
+                SEEN[$dir]=1
+                SKILL_LIST+=("$dir")
+              fi
+            done < <(bash scripts/discover-index-skills.sh "${BASE_REF}")
+          fi
+
+          if [ ${#SKILL_LIST[@]} -eq 0 ]; then
+            echo "has-skills=false" >> "$GITHUB_OUTPUT"
+            echo "skills_args="    >> "$GITHUB_OUTPUT"
+            echo "No skill directories to check — promote-check skipped."
+          else
+            echo "has-skills=true" >> "$GITHUB_OUTPUT"
+            printf -v ARGS '%s ' "${SKILL_LIST[@]}"
+            echo "skills_args=${ARGS}" >> "$GITHUB_OUTPUT"
+            echo "Skills to check: ${SKILL_LIST[*]}"
+          fi
+
+      - name: Run index integrity check
+        if: steps.find.outputs.has-skills == 'true'
+        env:
+          SKILLS: ${{ steps.find.outputs.skills_args }}
+        run: |
+          # shellcheck disable=SC2086
+          bash scripts/index-check.sh $SKILLS
