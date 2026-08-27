@@ -37,6 +37,9 @@ for line in diff_out.splitlines():
     line = line[1:].lstrip("﻿")
     try:
         row = next(csv.reader(io.StringIO(line)))
+        # Skip header row (appears in diff when BOM or first line changes)
+        if not row or row[0] == 'nombre':
+            continue
         # ruta_biblioteca is column index 8 (0-based)
         if len(row) > 8:
             rel = normalize(row[8])
