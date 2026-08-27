@@ -1,0 +1,5 @@
+# _INDEX.csv is the PROMOTE source of truth. Keep it UTF-8 and let Git own
+# the line endings so a Windows editor cannot smuggle in UTF-16 or CRLF-only
+# corruption. Do NOT add `eol=` here: the committed blob is already LF and
+# forcing eol would rewrite every row.
+_INDEX.csv text working-tree-encoding=UTF-8

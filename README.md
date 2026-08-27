@@ -360,9 +360,28 @@ Always relative from repo root. No `C:\`, no leading slash.
     agentes-meta/mias/skill-promote     ← correct
     C:\skills-library\agentes-meta\...  ← legacy (tolerated in existing rows, forbidden in new ones)
 
+### Editing `_INDEX.csv` safely
+
+`_INDEX.csv` is the PROMOTE source of truth. It has broken twice from bad
+writers (double BOM, a TAB-delimited row). Follow this recipe:
+
+1. Edit with Python only: `open(path, newline="", encoding="utf-8-sig")` to
+   read, `newline=""` + `utf-8-sig` (exactly one BOM) to write.
+2. Never touch it with PowerShell `Set-Content`, `Out-File`,
+   `[IO.File]::WriteAllText`, or `echo >>` — they inject BOMs / CRLF / UTF-16.
+3. Delimiter is comma only. Zero tabs anywhere in the file.
+4. `hash_sha256` = SHA-256 of the **Git blob** of `SKILL.md`
+   (`git cat-file blob HEAD:<path>/SKILL.md`), never `Get-FileHash` of the
+   working-tree file (CRLF on Windows → wrong hash).
+5. `ruta_biblioteca` is repo-root-relative (see above).
+6. Run `./scripts/lint-index.sh` before every push.
+
 ### Local index check
 
 ```bash
+# Canonical-form lint: one BOM, zero tabs, uniform column count
+./scripts/lint-index.sh
+
 # Check one skill
 ./scripts/index-check.sh agentes-meta/mias/skill-promote
 
