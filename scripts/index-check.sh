@@ -36,6 +36,14 @@ raw = index_path.read_bytes()
 while raw.startswith(b'\xef\xbb\xbf'):
     raw = raw[3:]
 text = raw.decode('utf-8').replace('\r\n', '\n').replace('\r', '\n')
+
+# Reject tab-delimited rows before parsing: csv.DictReader would silently
+# yield None for every unfilled column (this bit delivery-first-cto, 2026-08).
+for lineno, line in enumerate(text.split('\n'), 1):
+    if '\t' in line:
+        name = line.split('\t', 1)[0].strip('"') or f'line {lineno}'
+        sys.exit(f"_INDEX.csv: TAB in row {name!r} (line {lineno}): use commas only")
+
 reader = csv.DictReader(io.StringIO(text))
 rows = list(reader)
 
