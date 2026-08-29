@@ -259,6 +259,8 @@ Local run:
 
     ./scripts/scan-skills.sh <skill-dir> [<skill-dir> ...]
 
+Noise baseline for `comunidad` product skills (`--no-llm`): [docs/validate-baseline.md](docs/validate-baseline.md).
+
 ### Threshold
 
 | Condition | CI result | scan_verdict | Next step |
