@@ -261,6 +261,11 @@ Local run:
 
 Noise baseline for `comunidad` product skills (`--no-llm`): [docs/validate-baseline.md](docs/validate-baseline.md).
 
+The 5 Jewel skills in that baseline now carry `scan_*` in `_INDEX.csv` and are no
+longer "comunidad ciega": `add-emails` + `add-payments` → `allow`; `add-mobile`,
+`add-ui-kit`, `supabase` → `review` with a `scan_waiver` for the PE3/RP1 false
+positives approved 2026-08-28 (`scan_report` = the baseline doc).
+
 ### Threshold
 
 | Condition | CI result | scan_verdict | Next step |
