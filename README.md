@@ -282,11 +282,27 @@ SARIF results go to the Security tab (Code Scanning). No public artifact.
 - `mias` skills go through the same gate — no auto-trust for first-party skills.
 - `antigravity.zip` stays in `_archivo/` unscanned; it is not resolvable.
 
+### find-skills respects scan_verdict
+
+`find-skills` is not a grep of names. Inside this repo it resolves through
+`scripts/find-skills.sh`, which reads `_INDEX.csv` (it never writes it) and never
+calls SkillSpector. It returns a `status` per matching row:
+
+- `allow` — `mias` (not `deny`, not archived), or `comunidad` + `scan_verdict=allow`. Resolvable.
+- `review` — `scan_verdict=review` **with** a non-empty `scan_waiver`. Resolvable but `needs_review`; the caller must surface the waiver, not load it as `allow`.
+- `blocked` — `_archivo/` path, `scan_verdict=deny`, `review` without a waiver, or **`comunidad` with empty/absent `scan_verdict`**. Not resolvable → `BLOCKED_BY_GOVERNANCE`, never `NOT_FOUND`.
+- `unindexed` — folder on disk with no row. Not resolvable; promotion adds the row.
+- `not_found` — no name match anywhere. The only status that may lead to `skill-creator`.
+
+**Comunidad without a scan is not loaded.** A `comunidad` skill stays `blocked`
+until the Skill Gate scores it and its row carries `scan_verdict` (+ `scan_waiver`
+if `review`). Exit code: `0` when a result is `allow`/`review`, `2` otherwise.
+
 ### Initial ingestion exception (meta-skills)
 
 A meta-skill entering the library for the first time may carry `scan_verdict=review` + a `scan_waiver` explaining why a full baseline is pending. The first PR that subsequently touches the skill must include a complete scan result — `scan_score`, `scan_version`, `scan_report` — before the waiver can be cleared.
 
-`find-skills` (when implemented) treats `review + scan_waiver` as resolvable for `agentes-meta/mias/` entries only, not for product-category `comunidad` skills.
+`find-skills` treats `review + scan_waiver` as resolvable (marked `needs_review`) for `agentes-meta/` entries — `mias` and `comunidad` alike. Product-category `comunidad` skills (backend, contenido, diseño, …) still require `scan_verdict=allow`, or `review` with an explicit per-skill waiver, before they resolve.
 
 ### False positive exceptions
 

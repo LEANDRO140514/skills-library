@@ -2,12 +2,44 @@
 name: find-skills
 description: Helps users discover and install agent skills when they ask questions like "how do I do X", "find a skill for X", "is there a skill that can...", provide a GitHub URL to install directly, or express interest in extending capabilities. This skill should be used when the user is looking for functionality that might exist as an installable skill.
 metadata:
-  version: '1.1.0'
+  version: '1.2.0'
 ---
 
 # Find Skills
 
 This skill helps you discover and install skills from the open agent skills ecosystem.
+
+## Governed resolution (inside the skills-library repo)
+
+When you are working in the governed `skills-library` repo, `_INDEX.csv` is the
+registry and **`find-skills` resolves against it — it is not a grep of names.**
+
+**Call the script. Do not eyeball the CSV and do not reconstruct paths.**
+
+```bash
+./scripts/find-skills.sh <name>
+./scripts/find-skills.sh --query "<substring>"
+```
+
+It emits one JSON object per matching row
+(`nombre`, `ruta_biblioteca`, `mias_o_comunidad`, `scan_verdict`, `scan_waiver`,
+`confianza`, `status`) and never writes `_INDEX.csv`. It does not run SkillSpector.
+
+| status | meaning | what the caller does |
+|---|---|---|
+| `allow` | `mias` (not `deny`, not archived), or `comunidad` + `scan_verdict=allow` | resolve via `ruta_biblioteca`, copy (never move) to the target |
+| `review` | `comunidad` (or `mias`) + `scan_verdict=review` **with** a non-empty `scan_waiver` | resolvable, but mark `needs_review=true` — surface the waiver; never load it silently as if it were `allow` |
+| `blocked` | `_archivo/` path, `scan_verdict=deny`, `scan_verdict=review` with no waiver, or **`comunidad` with empty/absent `scan_verdict`** | do **not** resolve. Emit `BLOCKED_BY_GOVERNANCE`, not `NOT_FOUND`. A comunidad skill with no scan is "comunidad ciega" — it is blocked until the Skill Gate scores it. |
+| `unindexed` | folder exists on disk but has no `_INDEX.csv` row | do not resolve, do not invent a row — report it and let promotion add the row |
+| `not_found` | no name match anywhere | genuine miss — this is the only status that may lead to `skill-creator` |
+
+Exit code: `0` if at least one result is `allow` or `review`; `2` if every
+result is `blocked` / `unindexed` / `not_found`.
+
+**`blocked` is never `NOT_FOUND`.** Only `not_found` authorizes creating a new skill.
+
+Outside the governed repo (no `_INDEX.csv` in reach), fall back to the local /
+ecosystem flow below.
 
 ## When to Use This Skill
 
@@ -81,17 +113,21 @@ skill living in two places at once.
 
 **0b. Is it in the local library, just not active anywhere yet?**
 
-If it's not in global, check `C:\skills-library\_INDEX.csv` — the personal curated library
-(`mias` = authored by the user, `comunidad` = sourced elsewhere but reviewed). Search
-the `nombre` column (and `categoria` if it helps narrow things down) for a match.
+If it's not in global and you are inside the `skills-library` repo, run the governed
+resolver — **do not read `_INDEX.csv` by hand**:
 
-**Always read the skill's real path from the `ruta_biblioteca` column.** Never reconstruct the
-path by combining `categoria`/`mias_o_comunidad`/`nombre` yourself — the index has confirmed cases
-where a skill's physical folder doesn't match its category label (e.g. after being archived), so
-`ruta_biblioteca` is the only column guaranteed to point at the real folder.
+```bash
+./scripts/find-skills.sh <name>
+```
 
-**If the match's `ruta_biblioteca` points inside `C:\skills-library\_archivo\`, treat it
-differently from a normal match** — it was deliberately set aside, not just uncategorized:
+Act on the `status` field per the table in *Governed resolution* above:
+`allow`/`review` → resolve via the returned `ruta_biblioteca` (copy, never move);
+`blocked` → `BLOCKED_BY_GOVERNANCE`, stop; `unindexed` → report, do not invent a row;
+`not_found` → continue to Step 1. The `ruta_biblioteca` in the output is authoritative —
+never reconstruct a path from `categoria`/`mias_o_comunidad`/`nombre`.
+
+**If the match's `ruta_biblioteca` points inside `_archivo/` (status `blocked`), treat it
+differently from a normal miss** — it was deliberately set aside, not just uncategorized:
 
 1. Check the `razon_archivo` column — it says why: `duplicado` (already available another way,
    e.g. a factory-installed pack), `descartado` (a superseded/inferior version), or `pospuesto`
