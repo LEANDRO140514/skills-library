@@ -482,6 +482,27 @@ Jewel **no** están en ningún perfil).
 
 `.claude/skills/` está en `.gitignore`: una carga local nunca se commitea.
 
+### Runtimes que no auto-descubren `SKILL.md` (AGENTS.md / .goosehints)
+
+Claude Code y kimchi escanean un directorio de skills solos. OpenCode, Cursor,
+Warp o Goose leen **un** markdown fijo. Para esos, `emit-context.sh` genera un
+bloque-índice desde `_INDEX.csv` — mismas reglas de gobernanza que `find-skills`
+(solo lista `allow` / `review`); el agente abre cada `SKILL.md` on-demand.
+
+```bash
+# Bloque para AGENTS.md (OpenCode, Cursor, kimchi, …):
+./scripts/emit-context.sh --format agents --profile dev --root ~/skills-library >> AGENTS.md
+
+# Bloque para .goosehints (Block Goose):
+./scripts/emit-context.sh --format goosehints --profile dev --root ~/skills-library >> .goosehints
+```
+
+`--root` prefija la ruta de cada `SKILL.md` (checkout de la librería, o un
+`--target` de `load-skills`); sin `--root` las rutas son relativas a la raíz del
+repo. Sin `--profile` lista toda la librería resoluble. Solo escribe a stdout: el
+bloque entre `BEGIN/END governed-skills` es un deployment, se **regenera**, no se
+edita a mano.
+
 ### Programar trabajo con estas skills
 
 Corré Claude Code (u otro agente) **dentro de `C:\skills-library`** para gobernar
@@ -512,9 +533,10 @@ Recién después del merge la skill es cargable por perfil.
 | **validate** | `scripts/scan-skills.sh` · Skill Gate | corre SkillSpector, decide `allow`/`review`/`deny` | nada |
 | **promote** | `scripts/index-check.sh` · Promote Check | verifica la fila de `_INDEX.csv` y mergea a `main` | `_INDEX.csv` (por el autor del PR), `main` |
 | **load** | `scripts/load-skills.sh --apply` | copia skills ya gobernadas a un `--target` | solo el `--target` |
+| **emit-context** | `scripts/emit-context.sh` | índice `AGENTS.md` / `.goosehints` desde `_INDEX.csv` | nada (stdout) |
 
 **load ≠ promote.** `load` nunca toca `_INDEX.csv` ni `main`; solo materializa
-una copia de deployment.
+una copia de deployment. `emit-context` tampoco escribe: vos rediriges su salida.
 
 ## Guiding Principle
 
