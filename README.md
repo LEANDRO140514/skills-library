@@ -309,6 +309,10 @@ A meta-skill entering the library for the first time may carry `scan_verdict=rev
 
 `find-skills` treats `review + scan_waiver` as resolvable (marked `needs_review`) for `agentes-meta/` entries — `mias` and `comunidad` alike. Product-category `comunidad` skills (backend, contenido, diseño, …) still require `scan_verdict=allow`, or `review` with an explicit per-skill waiver, before they resolve.
 
+### ECC candidates (wave 1)
+
+[ECC](https://github.com/affaan-m/ECC) is treated as **upstream of candidates, not a plugin** — no `/plugin` marketplace, no `ecc@ecc`, no hooks. Skills enter `agentes-meta/comunidad/` one wave at a time and pass VALIDATE + PROMOTE like any other. Each carries an `UPSTREAM.md` (repo, original path, pinned commit SHA, MIT license); `origen` in `_INDEX.csv` is `https://github.com/affaan-m/ECC@<sha>`. Wave 1 (PR, ECC @ `d8e6a51`): `tdd-workflow`, `security-review`, `coding-standards` — SkillSpector `--no-llm` 0 / 0 / 20, all `allow`.
+
 ### False positive exceptions
 
 Approved exceptions are implemented as scan-scope exclusions in the gate — not as threshold reductions. The global threshold (score ≥ 51 or any CRITICAL) applies everywhere else.
