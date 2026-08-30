@@ -416,6 +416,106 @@ writers (double BOM, a TAB-delimited row). Follow this recipe:
 ./scripts/index-check.sh
 ```
 
+## Uso
+
+Cómo trabajar **con** las skills gobernadas sin depender de ningún chat previo.
+
+### Qué es este repo
+
+Una **aduana**, no un marketplace. `_INDEX.csv` es el registro; cada skill entra
+por VALIDATE (Skill Gate) + PROMOTE (Promote Check) y queda en su categoría. Las
+copias que uses en un runtime (`.claude/skills/`, etc.) son **deployments**, nunca
+la fuente canónica. No se instala nada con `/plugin`.
+
+### Setup (Windows)
+
+```bash
+git clone https://github.com/LEANDRO140514/skills-library.git C:\skills-library
+```
+
+- Los scripts son `.sh`: usá **Git Bash** (no PowerShell, no cmd).
+- `find-skills` / `index-check` / `lint-index` necesitan **Python 3** en el PATH
+  (`python3`, `python`, o `py -3` — cualquiera sirve).
+- El Skill Gate local (`scripts/scan-skills.sh`) necesita **SkillSpector** en el PATH:
+
+  ```bash
+  uv tool install "git+https://github.com/NVIDIA/SkillSpector.git@v2.9.6"
+  ```
+
+  Si `skillspector` quedó en `~/.local/bin`, agregá esa carpeta al PATH de Git Bash.
+
+### Resolver una skill
+
+```bash
+./scripts/find-skills.sh <nombre>
+./scripts/find-skills.sh --query "<substring>"
+```
+
+Devuelve un JSON por fila con un `status`:
+
+| status | significado | qué hacer |
+|---|---|---|
+| `allow` | `mias`, o `comunidad` con `scan_verdict=allow` | cargar |
+| `review` | `scan_verdict=review` **con** `scan_waiver` | cargar, pero es `needs_review` — leé el waiver |
+| `blocked` | `_archivo/`, `deny`, `review` sin waiver, o `comunidad` sin scan | **no cargar** (`BLOCKED_BY_GOVERNANCE`) |
+| `unindexed` | carpeta en disco sin fila en el índice | no cargar; promoción agrega la fila |
+| `not_found` | no hay match de nombre | **se puede crear** una skill nueva |
+
+### Cargar un perfil a un target explícito
+
+`load-skills.sh` resuelve cada skill del perfil con `find-skills` y copia **solo**
+las `allow` / `review`. No asume ningún target: `--target` es obligatorio.
+
+```bash
+# Ver qué haría (default):
+./scripts/load-skills.sh --profile dev --target /c/skills-dev --dry-run
+
+# Aplicar de verdad, al runtime de este repo:
+./scripts/load-skills.sh --profile dev --target /c/skills-library/.claude/skills --apply
+```
+
+Copia `SKILL.md` + `UPSTREAM.md` + `*.md` de raíz + `scripts/` + `references/` a
+`<target>/<nombre>/`. No hay `--prune`: limpiar copias viejas del target es manual.
+Perfil `dev` = `find-skills`, `skill-promote`, `skill-scanner`, `tdd-workflow`,
+`security-review`, `coding-standards`, `controlled-monorepo-workflow` (las 5 skills
+Jewel **no** están en ningún perfil).
+
+`.claude/skills/` está en `.gitignore`: una carga local nunca se commitea.
+
+### Programar trabajo con estas skills
+
+Corré Claude Code (u otro agente) **dentro de `C:\skills-library`** para gobernar
+la librería, o **dentro del `--target`** donde cargaste el perfil para usar las
+skills en otro proyecto. La librería nunca se consume como runtime en sí misma.
+
+### Agregar una skill nueva
+
+```
+worktree aislado  ->  Skill Gate (VALIDATE)  ->  Promote Check (PROMOTE)
+                  ->  merge a main  ->  ./scripts/load-skills.sh ... --apply
+```
+
+Recién después del merge la skill es cargable por perfil.
+
+### No
+
+- `❌ /plugin install ecc` — ECC es upstream de candidatos, no un plugin.
+- `❌` copiar `comunidad/` entera a un runtime — cargá por perfil / por `status`.
+- `❌` editar `_INDEX.csv` con PowerShell `Set-Content` (rompe BOM/EOL) — ver
+  *Editing `_INDEX.csv` safely*.
+- `❌` tratar una copia de runtime como canónica.
+
+### validate vs promote vs load
+
+| paso | script / CI | qué hace | escribe |
+|---|---|---|---|
+| **validate** | `scripts/scan-skills.sh` · Skill Gate | corre SkillSpector, decide `allow`/`review`/`deny` | nada |
+| **promote** | `scripts/index-check.sh` · Promote Check | verifica la fila de `_INDEX.csv` y mergea a `main` | `_INDEX.csv` (por el autor del PR), `main` |
+| **load** | `scripts/load-skills.sh --apply` | copia skills ya gobernadas a un `--target` | solo el `--target` |
+
+**load ≠ promote.** `load` nunca toca `_INDEX.csv` ni `main`; solo materializa
+una copia de deployment.
+
 ## Guiding Principle
 
 > The library is the registry of governed capability.
