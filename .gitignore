@@ -6,3 +6,7 @@ _archivo/
 **/.insforge/
 project.json
 reports/
+
+# Local skill loads (scripts/load-skills.sh --apply). Runtime copies are never
+# canonical and must not be committed.
+.claude/skills/
