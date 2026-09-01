@@ -4,6 +4,19 @@ Biblioteca gobernada de Skills reutilizables para los agentes y constructores de
 
 Este repositorio es la **fuente de verdad** de las capacidades curadas. Las copias instaladas en runtimes como `~/.claude/skills/` son deployments; no son la fuente canónica.
 
+## Filosofía
+
+La doctrina canónica está en **[docs/SKILLS_PHILOSOPHY.md](docs/SKILLS_PHILOSOPHY.md)**. Léela antes de agregar, buscar o construir capacidades.
+
+En una línea: **work-driven, local-first, externally refreshed, governed.**
+
+- **Work-driven** — el trabajo real determina qué Skills necesitamos; la biblioteca no determina qué trabajo hacemos. No coleccionamos Skills.
+- **Local-first** — se resuelve primero contra lo ya activo y contra esta biblioteca gobernada (`_INDEX.csv`), que es la fuente de verdad.
+- **Externally refreshed** — salir al ecosistema externo ocurre **por necesidad**, no como *discovery* permanente; preferimos una solución probada antes de construir la propia.
+- **Governed** — toda capacidad externa entra como **candidata**, no como *trusted*: pasa Skill Gate + Promote, y promover ≠ desplegar.
+
+El **Super Samurai** es el crítico externo del arsenal: revisa periódicamente cómo trabajamos y puede concluir legítimamente **NO CHANGE**. Pekín preserva la experiencia; el Samurai combate la complacencia.
+
 ## Arquitectura
 
     task
