@@ -4,6 +4,10 @@
 # Pin: SkillSpector v2.9.6 (2026-08-18). A version bump is its own dedicated PR.
 # Thresholds: DENY if critical finding OR risk_assessment.score >= 51.
 #             Score 50 without critical is CAUTION — PR passes, requires Sentry review.
+# Waivers:    a score >= 51 is downgraded to CAUTION when _INDEX.csv already records a
+#             reviewed verdict for that skill (allow, or review + non-empty scan_waiver)
+#             AND the row's hash_sha256 matches the SKILL.md being scanned, so the waiver
+#             provably covers this exact content. A CRITICAL finding is never waivable.
 # SARIF goes to the Security tab (Code Scanning). No public artifact with findings.
 
 name: Skill Gate
@@ -185,6 +189,15 @@ jobs:
           echo "json=${JSON_FILE}"            >> "$GITHUB_OUTPUT"
           echo "sarif=${SARIF_FILE}"          >> "$GITHUB_OUTPUT"
 
+      # Governance state already recorded in _INDEX.csv for this skill.
+      # A reviewed verdict + waiver bound to this exact SKILL.md downgrades DENY to CAUTION.
+      - name: Read registered verdict and waiver
+        id: waiver
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/index-waiver.py "${{ matrix.skill }}" >> "$GITHUB_OUTPUT"
+          python3 .github/scripts/index-waiver.py "${{ matrix.skill }}"
+
       - name: Write PR job summary
         if: always()
         env:
@@ -192,6 +205,8 @@ jobs:
           SCORE:     ${{ steps.scan.outputs.score }}
           CRITICAL:  ${{ steps.scan.outputs.critical }}
           REC:       ${{ steps.scan.outputs.recommendation }}
+          VERDICT:   ${{ steps.waiver.outputs.verdict }}
+          WAIVED:    ${{ steps.waiver.outputs.waived }}
         run: |
           SAFE="${SKILL_DIR//\//-}"
           JSON_FILE="/tmp/result-${SAFE}.json"
@@ -204,6 +219,8 @@ jobs:
             echo "| Score | ${SCORE} / 100 |"
             echo "| Critical findings | ${CRITICAL} |"
             echo "| Recommendation | ${REC} |"
+            echo "| Registered verdict | ${VERDICT:-none} |"
+            echo "| Waiver applies | ${WAIVED:-no} |"
             echo ""
             echo "### Top findings (up to 3)"
             echo "| Severity | Category | Location |"
@@ -232,9 +249,13 @@ jobs:
       # Gate decision — must be the last step so summary is already written.
       - name: Enforce gate threshold
         env:
-          SKILL_DIR: ${{ matrix.skill }}
-          SCORE:     ${{ steps.scan.outputs.score }}
-          CRITICAL:  ${{ steps.scan.outputs.critical }}
+          SKILL_DIR:  ${{ matrix.skill }}
+          SCORE:      ${{ steps.scan.outputs.score }}
+          CRITICAL:   ${{ steps.scan.outputs.critical }}
+          WAIVED:     ${{ steps.waiver.outputs.waived }}
+          VERDICT:    ${{ steps.waiver.outputs.verdict }}
+          HAS_WAIVER: ${{ steps.waiver.outputs.waiver }}
+          HASH_MATCH: ${{ steps.waiver.outputs.hash_match }}
         run: |
           # If scan step failed to produce outputs, treat as gate failure.
           if [ -z "${SCORE}" ] || [ -z "${CRITICAL}" ]; then
@@ -242,9 +263,22 @@ jobs:
             exit 1
           fi
 
-          if [ "${CRITICAL}" -gt 0 ] || [ "${SCORE}" -ge 51 ]; then
-            echo "::error file=${SKILL_DIR}/SKILL.md::DENY — score=${SCORE}/100, critical_findings=${CRITICAL}. Fix all critical issues and reduce score below 51 before merging."
+          # A CRITICAL finding is never waivable.
+          if [ "${CRITICAL}" -gt 0 ]; then
+            echo "::error file=${SKILL_DIR}/SKILL.md::DENY — score=${SCORE}/100, critical_findings=${CRITICAL}. Critical findings cannot be waived. Fix them before merging."
             exit 1
+          fi
+
+          if [ "${SCORE}" -ge 51 ]; then
+            if [ "${WAIVED}" = "yes" ]; then
+              echo "::warning file=${SKILL_DIR}/SKILL.md::WAIVED (score=${SCORE}, verdict=${VERDICT}) — _INDEX.csv records a reviewed verdict for this exact SKILL.md (hash matches). No critical findings. Re-review required if the skill changes."
+            else
+              REASON="no reviewed verdict in _INDEX.csv"
+              if [ "${VERDICT}" = "review" ] && [ "${HAS_WAIVER}" = "no" ]; then REASON="verdict=review with an empty scan_waiver"; fi
+              if [ "${HASH_MATCH}" = "no" ]; then REASON="hash_sha256 does not match the scanned SKILL.md (stale waiver)"; fi
+              echo "::error file=${SKILL_DIR}/SKILL.md::DENY — score=${SCORE}/100, critical_findings=0, ${REASON}. Record a reviewed verdict + scan_waiver in _INDEX.csv, or reduce the score below 51."
+              exit 1
+            fi
           fi
 
           if [ "${SCORE}" -ge 21 ]; then
