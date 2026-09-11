@@ -399,35 +399,34 @@ This produces a real academic-grade PDF with unified fonts, perfect formula base
 
 Tectonic is a lightweight, modern LaTeX engine that auto-resolves packages at first compile. No sudo/admin password required — it downloads a single binary.
 
-**Auto-install if not present** (agent should do this automatically):
+**Prerequisite — do NOT install it for the user.** Detect Tectonic; if it is missing, stop and
+surface the install command so the user can run it themselves. The agent must never download and
+execute a remote install script on its own.
 
 ```python
-import subprocess, shutil, platform, os
+import shutil, platform
 
-def ensure_tectonic():
+INSTALL_HINT = {
+    "Darwin":  "brew install tectonic",
+    "Linux":   "see https://tectonic-typesetting.github.io/en-US/install.html",
+    "Windows": "winget install TectonicProject.Tectonic",
+}
+
+def check_tectonic():
+    """Return (ok, hint). Never installs anything."""
     if shutil.which("tectonic"):
-        return True
+        return True, "installed"
     system = platform.system()
-    if system in ("Darwin", "Linux"):
-        subprocess.run(
-            ["sh", "-c", "curl --proto '=https' --tlsv1.2 -fsSL https://drop-sh.fullyjustified.net | sh"],
-            check=True
-        )
-        # Move to a PATH directory
-        if os.path.exists("./tectonic"):
-            dest = os.path.expanduser("~/.local/bin/tectonic")
-            os.makedirs(os.path.dirname(dest), exist_ok=True)
-            os.rename("./tectonic", dest)
-    elif system == "Windows":
-        subprocess.run(
-            ["powershell", "-Command",
-             "[System.Net.ServicePointManager]::SecurityProtocol = "
-             "[System.Net.ServicePointManager]::SecurityProtocol -bor 3072; "
-             "iex ((New-Object System.Net.WebClient).DownloadString('https://drop-ps1.fullyjustified.net'))"],
-            check=True
-        )
-    return shutil.which("tectonic") is not None
+    hint = INSTALL_HINT.get(system, INSTALL_HINT["Linux"])
+    return False, f"tectonic not found on PATH — install it with: {hint}"
 ```
+
+If `check_tectonic()` returns `False`, report the hint to the user and stop; do not proceed with
+the LaTeX route until they confirm Tectonic is on PATH. Fall back to the non-LaTeX PDF path if
+they prefer not to install it.
+
+Only run an installation when the user explicitly asks for it (an opt-in `--install` flag, the
+same pattern `pptx/scripts/check_env.py` uses).
 
 #### Compile Full Document to PDF
 
