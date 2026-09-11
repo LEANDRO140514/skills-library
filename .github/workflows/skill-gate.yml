@@ -1,4 +1,6 @@
 # Validate gate — runs SkillSpector (static, --no-llm) on every skill touched by a PR.
+# "Touched" includes a skill whose _INDEX.csv row changed: promoting a skill by editing
+# only the registry must not bypass the scan.
 # Pin: SkillSpector v2.9.6 (2026-08-18). A version bump is its own dedicated PR.
 # Thresholds: DENY if critical finding OR risk_assessment.score >= 51.
 #             Score 50 without critical is CAUTION — PR passes, requires Sentry review.
@@ -11,6 +13,7 @@ on:
     paths:
       - '**/SKILL.md'
       - '**/scripts/**'
+      - '_INDEX.csv'
 
 permissions:
   contents: read
@@ -66,6 +69,21 @@ jobs:
             SEEN[$root]=1
             SKILL_LIST+=("$root")
           done <<< "$CHANGED"
+
+          # A PR can promote a skill by editing only its _INDEX.csv row; that row change
+          # resolves to no SKILL.md, so the loop above would leave the gate empty.
+          # Map changed registry rows back to their skill directories.
+          if grep -qx '_INDEX.csv' <<< "$CHANGED"; then
+            while IFS= read -r root; do
+              [[ -z "$root" ]] && continue
+              [[ "$root" == _archivo/* ]] && continue
+              [[ -f "${root}/SKILL.md" ]] || continue
+              if [[ "${SEEN[$root]+_}" ]]; then continue; fi
+              SEEN[$root]=1
+              SKILL_LIST+=("$root")
+              echo "Index row changed -> scanning ${root}"
+            done < <(python3 .github/scripts/index-changed-skills.py "${BASE_REF}")
+          fi
 
           if [ ${#SKILL_LIST[@]} -eq 0 ]; then
             echo "has-skills=false" >> "$GITHUB_OUTPUT"
