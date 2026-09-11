@@ -54,13 +54,18 @@ categoría disparó y el conteo.
 
 | veredicto | skills |
 |---|---|
-| `allow` | 37 |
+| `allow` | 38 (37 + `pdf` tras corregirlo) |
 | `review` (con waiver) | 26 |
-| candidato a `deny` — **no promovido** | 1 |
+| `deny` | 0 |
 
-## Candidato a `deny` — `contenido/comunidad/pdf`
+## `contenido/comunidad/pdf` — corregido y promovido
 
-`SKILL.md:413` instruye al agente a ejecutar **automáticamente y sin confirmación** del usuario:
+**Estado: `allow`.** El hallazgo de abajo se corrigió en este mismo PR
+(`fix(pdf): replace automatic remote install with documented prerequisite`); la fila se promovió
+con el hash recalculado tras el cambio.
+
+El `SKILL.md` original instruía al agente a ejecutar **automáticamente y sin confirmación** del
+usuario, en **dos** plataformas:
 
 ```python
 subprocess.run(
@@ -69,15 +74,23 @@ subprocess.run(
 )
 ```
 
-bajo el encabezado *"Auto-install if not present (agent should do this automatically)"*.
+y, en la rama Windows del mismo bloque:
 
-`drop-sh.fullyjustified.net` es el dominio oficial de instalación de Tectonic, así que el destino
-es legítimo — pero el patrón (descarga y ejecución de un script remoto, iniciada por el agente sin
-intervención humana) es exactamente lo que el Skill Gate existe para frenar.
+```python
+"iex ((New-Object System.Net.WebClient).DownloadString('https://drop-ps1.fullyjustified.net'))"
+```
 
-**Su fila quedó con `scan_verdict` vacío**: sigue resolviendo como `blocked` y no fue promovida.
-Registrar `deny` exige además mover la skill a `_archivo/` (regla [d] de `index-check.sh`), que es
-una decisión de gobernanza humana, no automática.
+ambos bajo el encabezado *"Auto-install if not present (agent should do this automatically)"*.
+
+`drop-sh.fullyjustified.net` y `drop-ps1.fullyjustified.net` son los dominios oficiales de
+instalación de Tectonic, así que el destino es legítimo — pero el patrón (descarga y ejecución de
+un script remoto, iniciada por el agente sin intervención humana) es exactamente lo que el Skill
+Gate existe para frenar.
+
+**Corrección aplicada:** el bloque se reemplazó por `check_tectonic()`, que sólo detecta y devuelve
+el comando de instalación para que lo corra el usuario, siguiendo el patrón que ya usan
+`insforge-cli` (prerequisito documentado) y `pptx/scripts/check_env.py` (instalación sólo detrás de
+un `--install` explícito).
 
 ## Reproducir
 
